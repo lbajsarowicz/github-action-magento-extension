@@ -70,6 +70,42 @@ test('the tools directory uses the custom repositories', async () => {
   assert.equal((await manifest({ customRepositories: false, repositories })).repositories, undefined);
 });
 
+test('tool installs keep the require-dev constraints and fall back to the same packages', async () => {
+  const { root, extension } = workspace();
+  fs.writeFileSync(path.join(extension, 'composer.json'), JSON.stringify({
+    'require-dev': { 'phpstan/phpstan': '^2.1', 'bitexpert/phpstan-magento': '^0.44', 'phpstan/extension-installer': '^1.4' },
+  }));
+  const install = async (failing) => {
+    const requires = [];
+    const sh = {
+      exec: async (command, args) => {
+        const index = args.indexOf('require');
+        if (index === -1) {
+          return { code: 0, stdout: '', output: '' };
+        }
+        const packages = args.slice(index + 1).filter((arg) => !arg.startsWith('--'));
+        requires.push(packages);
+        return { code: requires.length <= failing ? 1 : 0, stdout: '', output: '' };
+      },
+    };
+    const result = await installTools({ config: { tools: path.join(root, 'tools'), extension }, sh, log: () => {} },
+      'phpstan', ['phpstan/phpstan', 'bitexpert/phpstan-magento', 'acme/default-only']);
+    return { requires, source: result.source };
+  };
+
+  const constrained = await install(0);
+  assert.deepEqual(constrained.requires, [['phpstan/phpstan:^2.1', 'bitexpert/phpstan-magento:^0.44', 'phpstan/extension-installer:^1.4', 'acme/default-only']]);
+  assert.equal(constrained.source, "versions from the extension's require-dev");
+
+  const current = await install(1);
+  assert.deepEqual(current.requires[1], ['phpstan/phpstan', 'bitexpert/phpstan-magento', 'phpstan/extension-installer', 'acme/default-only']);
+  assert.equal(current.source, "current releases of the extension's require-dev tools");
+
+  const defaults = await install(2);
+  assert.deepEqual(defaults.requires[2], ['phpstan/phpstan', 'bitexpert/phpstan-magento', 'acme/default-only']);
+  assert.equal(defaults.source, 'action defaults');
+});
+
 test('the checkout is the only source of the extension in the project', () => {
   const project = withExtension({ require: { 'magento/product-community-edition': '2.4.9' }, repositories: { old: {} } },
     '/work/ext', 'acme/module-demo', [{ type: 'composer', url: 'https://mirror.example/' }]);

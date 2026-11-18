@@ -35,7 +35,10 @@ function readComposer(extension) {
 
 /**
  * Installs a tool into its own directory, outside the Magento project. Packages the extension asks
- * for in require-dev take precedence; when they cannot be installed, the defaults are used.
+ * for in require-dev take precedence, with their constraints; a default is added only when the
+ * extension does not ask for that package. When the constraints cannot be installed, the same
+ * packages are installed at their current releases, so plugins such as phpstan/extension-installer
+ * and custom coding standards stay in place; only when that fails too are the defaults used.
  *
  * @returns {Promise<{directory: string, source: string}>}
  */
@@ -57,15 +60,24 @@ async function installTools(ctx, tool, defaults) {
 
   await initialise();
   const own = toolPackages(readComposer(ctx.config.extension), tool);
+  const ownNames = own.map((entry) => entry.slice(0, entry.indexOf(':')));
+  const missingDefaults = defaults.filter((name) => !ownNames.includes(name));
   let source = 'action defaults';
   if (own.length > 0) {
-    const attempt = await composer(['require', '--no-progress', '--quiet', ...own, ...defaults], { allowFailure: true });
+    const attempt = await composer(['require', '--no-progress', '--quiet', ...own, ...missingDefaults], { allowFailure: true });
     if (attempt.code === 0) {
       source = "versions from the extension's require-dev";
     } else {
-      ctx.log("The extension's require-dev tool versions could not be installed; using the defaults.");
+      ctx.log("The extension's require-dev tool versions could not be installed; using current releases of the same packages.");
       await initialise();
-      await composer(['require', '--no-progress', '--quiet', ...defaults]);
+      const current = await composer(['require', '--no-progress', '--quiet', ...ownNames, ...missingDefaults], { allowFailure: true });
+      if (current.code === 0) {
+        source = "current releases of the extension's require-dev tools";
+      } else {
+        ctx.log('Current releases of those packages could not be installed either; using the defaults.');
+        await initialise();
+        await composer(['require', '--no-progress', '--quiet', ...defaults]);
+      }
     }
   } else {
     await composer(['require', '--no-progress', '--quiet', ...defaults]);

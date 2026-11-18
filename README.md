@@ -455,7 +455,7 @@ Every Magento release declares its own development tools, and the checks use the
 | Tool | Version used |
 |---|---|
 | PHPUnit | The one the release under test resolves (9.6 on 2.4.7, 10.5 on 2.4.8, 12.5 on 2.4.9 today) |
-| PHPStan | From the extension's `require-dev` when it lists PHPStan packages; otherwise the release's own PHPStan with the `bitexpert/phpstan-magento` version that fits it |
+| PHPStan | From the extension's `require-dev` when it lists PHPStan packages, with its constraints (current releases of the same packages when those cannot be installed); otherwise the release's own PHPStan with the `bitexpert/phpstan-magento` version that fits it |
 | PHPCS and coding standard | From the extension's `require-dev` when it lists them; otherwise what the release resolves; in the static action, which installs no Magento, current releases |
 
 The summary of every check names the version it ran and where it came from.
