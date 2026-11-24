@@ -52,3 +52,15 @@ test('the Composer cache is restored once per job and release', () => {
   assert.deepEqual(detectPrepared({ ...base, cacheId: 'magento2.4.9' }), { cache: true });
   assert.deepEqual(detectPrepared({ ...base, job: '2-1-check', cacheId: 'magento2.4.9' }), { cache: false });
 });
+
+test('a step with composer-cache none leaves the Composer cache to a later step that wants it', () => {
+  const { env } = workspace();
+  const base = { work: env.MEC_WORK_DIR, job: '1-1-check', cacheId: 'magento2.4.9' };
+  assert.deepEqual(detectPrepared({ ...base, cacheMode: 'none' }), { cache: false });
+  assert.deepEqual(detectPrepared({ ...base, cacheMode: 'actions' }), { cache: false });
+  assert.deepEqual(detectPrepared({ ...base, cacheMode: 'actions' }), { cache: true });
+
+  const other = { ...base, job: '2-1-check' };
+  assert.deepEqual(detectPrepared({ ...other, cacheMode: 'actions' }), { cache: false });
+  assert.deepEqual(detectPrepared({ ...other, cacheMode: 'none' }), { cache: true });
+});

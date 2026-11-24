@@ -20,9 +20,12 @@ test('every action that caches Composer downloads can leave the cache to the run
     const steps = text.split('\n    - name:').filter((step) => /uses: actions\/cache|id: composer-cache/.test(step));
     assert.equal(steps.length, 2, file);
     for (const step of steps) {
-      assert.match(step, /if: .*inputs\.composer-cache != 'none'/, `${file}: ${step.split('\n')[0]}`);
+      const condition = step.split('\n').find((line) => /^ {6}if:/.test(line));
+      assert.equal(condition, "      if: ${{ steps.prepared.outputs.cache != 'true' && inputs.composer-cache != 'none' }}", `${file}: ${step.split('\n')[0]}`);
     }
-    assert.match(text, /MEC_COMPOSER_CACHE: \$\{\{ inputs\.composer-cache \}\}/, `${file} does not validate composer-cache`);
+    const prepare = text.split('\n    - name:').find((step) => /\n {6}id: prepared\n/.test(step));
+    assert.ok(prepare, `${file} has no prepare step`);
+    assert.match(prepare, /MEC_COMPOSER_CACHE: \$\{\{ inputs\.composer-cache \}\}/, `${file}: the prepare step does not get composer-cache`);
   }
 });
 

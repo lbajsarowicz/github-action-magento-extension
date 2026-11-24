@@ -50,10 +50,10 @@ const commands = {
 
   async prepare() {
     const env = process.env;
-    composerCacheMode(env.MEC_COMPOSER_CACHE);
+    const cacheMode = composerCacheMode(env.MEC_COMPOSER_CACHE);
     const phpRuntime = toolVersion('php', ['-r', 'echo PHP_VERSION;'], 'PHP');
     toolVersion('composer', ['--version', '--no-ansi'], 'Composer');
-    const prepared = detectPrepared({ work: env.MEC_WORK_DIR, job: job(env), cacheId: env.MEC_CACHE_ID });
+    const prepared = detectPrepared({ work: env.MEC_WORK_DIR, job: job(env), cacheId: env.MEC_CACHE_ID, cacheMode });
     output({ ...prepared, 'php-version': phpRuntime.split('.').slice(0, 2).join('.') });
     return 0;
   },
