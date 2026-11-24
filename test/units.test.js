@@ -17,7 +17,7 @@ const { CheckFailed } = require('../src/errors');
 const { defaultConfiguration } = require('../src/checks/phpstan');
 const { resolveToolConfig } = require('../src/checks/tool-config');
 const { validate } = require('../src/checks/static');
-const { resolvePackageVersion } = require('../src/checks/magento');
+const { resolvePackageVersion, install } = require('../src/checks/magento');
 const { createShell } = require('../src/shell');
 const { workspace } = require('./helpers');
 
@@ -239,26 +239,84 @@ test('the path repository can give the checkout a version', () => {
   assert.deepEqual(withExtension({ require: {} }, '/w/ext', 'acme/ext', []).repositories[0].options, { symlink: false });
 });
 
-test('package version from the input or from the nearest tag of the checkout', async () => {
+// The repositories must not depend on the developer's git configuration, such as commit signing.
+const ISOLATED_GIT = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+
+test('package version from the input or from the nearest version tag of the checkout', async () => {
   const { execFileSync } = require('node:child_process');
   const { extension } = workspace();
-  const git = (...args) => execFileSync('git', ['-C', extension, '-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { stdio: 'pipe' });
+  const git = (...args) => execFileSync('git', ['-C', extension, '-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { stdio: 'pipe', env: ISOLATED_GIT });
   const ctx = (packageVersion) => ({ config: { extension, packageVersion }, sh: createShell(() => {}) });
+
+  await assert.rejects(resolvePackageVersion(ctx('tag')), (error) => error instanceof CheckFailed
+    && /not a git repository/i.test(error.note) && !/fetch-depth/.test(error.note));
+
   git('init', '-q');
   git('add', '.');
   git('commit', '-q', '-m', 'one');
 
   assert.equal(await resolvePackageVersion(ctx('')), '');
   assert.equal(await resolvePackageVersion(ctx('2.0.1')), '2.0.1');
+  git('tag', 'latest');
   await assert.rejects(resolvePackageVersion(ctx('tag')), (error) => error instanceof CheckFailed && /fetch-depth: 0/.test(error.note));
 
   git('tag', 'v1.4.0');
   fs.writeFileSync(path.join(extension, 'Model/Demo.php'), '<?php class Demo { }');
   git('commit', '-q', '-am', 'two');
+  git('tag', 'stable');
+  git('tag', 'other-module/2.0.0');
   assert.equal(await resolvePackageVersion(ctx('tag')), '1.4.0');
 
-  git('tag', 'release-candidate');
-  await assert.rejects(resolvePackageVersion(ctx('tag')), /release-candidate/);
+  git('tag', 'v2-next');
+  await assert.rejects(resolvePackageVersion(ctx('tag')), /'v2-next' is not a version/);
+});
+
+test('install resolves the package version before create-project and names it in the note', async () => {
+  const { root, extension } = workspace();
+  const magentoRoot = path.join(root, 'magento');
+  const work = path.join(root, 'work');
+  fs.mkdirSync(work);
+  const installed = path.join(magentoRoot, 'vendor', 'acme', 'module-demo');
+  const calls = [];
+  const sh = {
+    exec: async (command, args) => {
+      calls.push([command, ...args].join(' '));
+      if (args[0] === 'create-project') {
+        fs.mkdirSync(magentoRoot, { recursive: true });
+        fs.writeFileSync(path.join(magentoRoot, 'composer.json'), '{"require": {}}');
+      }
+      if (command === 'git') {
+        return { code: 0, stdout: 'v1.4.0\n', output: 'v1.4.0\n' };
+      }
+      if (args.includes('--path')) {
+        fs.mkdirSync(installed, { recursive: true });
+        return { code: 0, stdout: `acme/module-demo ${installed}\n`, output: '' };
+      }
+      if (command === 'php') {
+        return { code: 0, stdout: installed, output: '' };
+      }
+      if (args[0] === '--version') {
+        return { code: 0, stdout: 'Composer version 2.8.0 2024-10-02', output: '' };
+      }
+      return { code: 0, stdout: 'versions : * 2.4.8-p5\n', output: '' };
+    },
+  };
+  const config = { magentoRoot, extension, extensionName: 'acme/module-demo', repositories: [], magentoVersion: '2.4.8-p5', work };
+  const ctx = (packageVersion) => ({ config: { ...config, packageVersion }, modules: ['Acme_Demo'], sh, log: () => {} });
+
+  const outcome = await install(ctx('tag'));
+  assert.match(outcome.note, /installed as an exact copy of the checkout, as version 1\.4\.0$/);
+  assert.ok(calls.findIndex((call) => call.startsWith('git ')) < calls.findIndex((call) => call.includes('create-project')));
+  const project = JSON.parse(fs.readFileSync(path.join(magentoRoot, 'composer.json'), 'utf8'));
+  assert.deepEqual(project.repositories[0].options.versions, { 'acme/module-demo': '1.4.0' });
+
+  calls.length = 0;
+  sh.exec = async (command, args) => {
+    calls.push([command, ...args].join(' '));
+    return { code: 128, stdout: '', output: 'fatal: No names found, cannot describe anything.\n' };
+  };
+  await assert.rejects(install(ctx('tag')), /fetch-depth: 0/);
+  assert.deepEqual(calls.filter((call) => call.includes('create-project')), []);
 });
 
 test('generated PHPUnit and PHPStan configurations', () => {

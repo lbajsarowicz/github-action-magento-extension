@@ -24,7 +24,10 @@ test('package-version is empty, tag or a version', () => {
   const { env } = workspace();
   assert.equal(readConfig(env).packageVersion, '');
   assert.equal(readConfig({ ...env, MEC_PACKAGE_VERSION: 'tag' }).packageVersion, 'tag');
-  assert.equal(readConfig({ ...env, MEC_PACKAGE_VERSION: '1.4.0-beta.1' }).packageVersion, '1.4.0-beta.1');
+  for (const version of ['1.4.0-beta.1', '1.4.0-beta.1+build.7', '2.4.8-p5', '1.4.0-RC2', '1.4.0.1']) {
+    assert.equal(readConfig({ ...env, MEC_PACKAGE_VERSION: version }).packageVersion, version);
+  }
+  assert.throws(() => readConfig({ ...env, MEC_PACKAGE_VERSION: '1.4.0-foo' }), /package-version must be/);
   assert.throws(() => readConfig({ ...env, MEC_PACKAGE_VERSION: 'latest' }), /package-version must be empty, tag or a version such as 1\.4\.0\./);
 });
 

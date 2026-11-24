@@ -423,6 +423,8 @@ Composer installs the checkout from a `path` repository and, without a version i
     fetch-depth: 0
 ```
 
+`tag` considers only tags that look like a version, `1.4.0` or `v1.4.0`, so tags such as `latest` or `other-module/2.0.0` are skipped. Magento is installed once per job, so the `package-version` of the step that installs it applies to the whole job; later steps of the same job do not change it.
+
 ## Private Composer repositories
 
 By default Magento and its dependencies come from the public mirror `mirror.mage-os.org` and from Packagist. `composer-repositories` replaces that with your own list, in the format of the `repositories` section of a `composer.json`. Credentials go in `COMPOSER_AUTH`.

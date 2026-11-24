@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { CheckFailed } = require('../errors');
-const { withExtension, templateRepositoryUrl } = require('../project');
+const { PACKAGE_VERSION, withExtension, templateRepositoryUrl } = require('../project');
 const { mirrorDirectory, differences } = require('../copy');
 
 const HELPERS = path.join(__dirname, '..', 'php');
@@ -11,8 +11,6 @@ const HELPERS = path.join(__dirname, '..', 'php');
 function magento(ctx, args, options = {}) {
   return ctx.sh.exec('php', ['-d', 'memory_limit=-1', 'bin/magento', ...args, '--no-ansi'], { cwd: ctx.config.magentoRoot, ...options });
 }
-
-const VERSION = /^[0-9]+\.[0-9]+\.[0-9]+([-+.][0-9A-Za-z.-]+)?$/;
 
 /**
  * The version the checkout is installed as: none, the `package-version` input, or the nearest tag.
@@ -23,13 +21,18 @@ async function resolvePackageVersion(ctx) {
   if (requested !== 'tag') {
     return requested;
   }
-  const described = await ctx.sh.exec('git', ['-C', ctx.config.extension, 'describe', '--tags', '--abbrev=0'], { echo: false, allowFailure: true });
+  const described = await ctx.sh.exec('git', ['-C', ctx.config.extension, 'describe', '--tags', '--abbrev=0',
+    '--match', 'v[0-9]*', '--match', '[0-9]*'], { echo: false, allowFailure: true });
   if (described.code !== 0) {
-    throw new CheckFailed('package-version tag needs the tags in the checkout; use fetch-depth: 0 in actions/checkout');
+    const message = described.output.trim().split('\n').pop() || `git describe exited with ${described.code}`;
+    if (/No names found|No tags can describe/.test(message)) {
+      throw new CheckFailed('package-version tag found no version tag in the checkout; use fetch-depth: 0 in actions/checkout');
+    }
+    throw new CheckFailed(`package-version tag: ${message}`);
   }
   const tag = described.stdout.trim();
   const version = tag.replace(/^v/, '');
-  if (!VERSION.test(version)) {
+  if (!PACKAGE_VERSION.test(version)) {
     throw new CheckFailed(`package-version tag: the nearest tag '${tag}' is not a version such as 1.4.0`);
   }
   return version;
