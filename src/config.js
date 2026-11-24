@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { ConfigError } = require('./errors');
 const { selectChecks } = require('./plan');
+const { PACKAGE_VERSION } = require('./project');
 
 const PACKAGE_NAME = /^[a-z0-9]([_.-]?[a-z0-9]+)*\/[a-z0-9]([_.-]?[a-z0-9]+)*$/;
 
@@ -45,6 +46,13 @@ function requireMatch(value, pattern, message) {
 /**
  * Reads and validates the inputs the action passes as MEC_* environment variables.
  */
+function packageVersion(requested) {
+  if (requested === '' || requested === 'tag' || PACKAGE_VERSION.test(requested)) {
+    return requested;
+  }
+  throw new ConfigError('package-version must be empty, tag or a version such as 1.4.0.');
+}
+
 function readConfig(env, { phpRuntime = '' } = {}) {
   const value = (name, fallback = '') => (env[name] === undefined || env[name] === '' ? fallback : String(env[name]));
 
@@ -89,6 +97,7 @@ function readConfig(env, { phpRuntime = '' } = {}) {
     repositories: parseRepositories(value('MEC_COMPOSER_REPOSITORIES', value('MAGENTO_EXTENSION_CHECK_COMPOSER_REPOSITORIES')))
       || [{ type: 'composer', url: 'https://mirror.mage-os.org/' }],
     customRepositories: value('MEC_COMPOSER_REPOSITORIES', value('MAGENTO_EXTENSION_CHECK_COMPOSER_REPOSITORIES')).trim() !== '',
+    packageVersion: packageVersion(value('MEC_PACKAGE_VERSION')),
     phpcs: {
       severity: requireMatch(value('MEC_PHPCS_SEVERITY'), /^[0-9]*$/, 'phpcs-severity must be a whole number.'),
       scope: requireMatch(value('MEC_PHPCS_SCOPE', 'changed'), /^(changed|all)$/, 'phpcs-scope must be changed or all.'),

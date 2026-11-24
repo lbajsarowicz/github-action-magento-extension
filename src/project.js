@@ -1,6 +1,12 @@
 'use strict';
 
 /**
+ * A version Composer accepts for the path repository: three or four numbers, an optional
+ * stability suffix such as `-beta.1`, `-RC2` or `-p5`, and optional build metadata.
+ */
+const PACKAGE_VERSION = /^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?([._-]?(stable|beta|b|RC|alpha|a|patch|pl|p)([.-]?[0-9]+)*)?([.-]?dev)?(\+[0-9A-Za-z.-]+)?$/i;
+
+/**
  * A repository that can never provide the extension itself, so that a published release of the
  * package cannot be installed in place of the checkout.
  */
@@ -20,13 +26,15 @@ function withoutExtension(repository, extensionName) {
  * Makes the checkout the first and only source of the extension in the Magento project.
  *
  * @param {Array<Object>} repositories where everything else comes from, in Composer's format
+ * @param {string} version the version the checkout is installed as; empty lets Composer guess
  */
-function withExtension(project, extensionPath, extensionName, repositories) {
+function withExtension(project, extensionPath, extensionName, repositories, version = '') {
+  // Copied, not symlinked: Magento refuses to deploy view files that resolve outside its root.
+  const options = version ? { symlink: false, versions: { [extensionName]: version } } : { symlink: false };
   return {
     ...project,
     repositories: [
-      // Copied, not symlinked: Magento refuses to deploy view files that resolve outside its root.
-      { type: 'path', url: extensionPath, options: { symlink: false } },
+      { type: 'path', url: extensionPath, options },
       ...repositories.map((repository) => withoutExtension(repository, extensionName)),
     ],
     require: { ...(project.require || {}), [extensionName]: '*@dev' },
@@ -39,4 +47,4 @@ function templateRepositoryUrl(repositories) {
   return repository ? repository.url : null;
 }
 
-module.exports = { withExtension, withoutExtension, templateRepositoryUrl };
+module.exports = { PACKAGE_VERSION, withExtension, withoutExtension, templateRepositoryUrl };
