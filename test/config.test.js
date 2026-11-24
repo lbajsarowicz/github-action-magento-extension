@@ -20,6 +20,19 @@ test('reads a valid configuration with defaults', () => {
   assert.equal(config.stepSummary, true);
 });
 
+test('phpcs-scope accepts lines', () => {
+  const { env } = workspace();
+  assert.equal(readConfig({ ...env, MEC_PHPCS_SCOPE: 'lines' }).phpcs.scope, 'lines');
+  assert.throws(() => readConfig({ ...env, MEC_PHPCS_SCOPE: 'diff' }), /phpcs-scope must be changed, all or lines\./);
+});
+
+test('phpstan-scope defaults to all and accepts changed and lines', () => {
+  const { env } = workspace();
+  assert.equal(readConfig(env).phpstan.scope, 'all');
+  assert.equal(readConfig({ ...env, MEC_PHPSTAN_SCOPE: 'lines' }).phpstan.scope, 'lines');
+  assert.throws(() => readConfig({ ...env, MEC_PHPSTAN_SCOPE: 'x' }), /phpstan-scope must be all, changed or lines\./);
+});
+
 test('label without a Magento release names PHP only', () => {
   const { env } = workspace();
   assert.equal(readConfig({ ...env, MEC_MAGENTO_VERSION: '', MEC_CHECKS: 'validate' }).label, 'PHP 8.4');

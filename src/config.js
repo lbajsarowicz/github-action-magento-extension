@@ -91,11 +91,12 @@ function readConfig(env, { phpRuntime = '' } = {}) {
     customRepositories: value('MEC_COMPOSER_REPOSITORIES', value('MAGENTO_EXTENSION_CHECK_COMPOSER_REPOSITORIES')).trim() !== '',
     phpcs: {
       severity: requireMatch(value('MEC_PHPCS_SEVERITY'), /^[0-9]*$/, 'phpcs-severity must be a whole number.'),
-      scope: requireMatch(value('MEC_PHPCS_SCOPE', 'changed'), /^(changed|all)$/, 'phpcs-scope must be changed or all.'),
+      scope: requireMatch(value('MEC_PHPCS_SCOPE', 'changed'), /^(changed|all|lines)$/, 'phpcs-scope must be changed, all or lines.'),
       config: value('MEC_PHPCS_CONFIG'),
     },
     phpstan: {
       level: requireMatch(value('MEC_PHPSTAN_LEVEL', '1'), /^([0-9]|10|max)$/, 'phpstan-level must be 0-10 or max.'),
+      scope: requireMatch(value('MEC_PHPSTAN_SCOPE', 'all'), /^(all|changed|lines)$/, 'phpstan-scope must be all, changed or lines.'),
       config: value('MEC_PHPSTAN_CONFIG'),
       baseline: value('MEC_PHPSTAN_BASELINE'),
     },

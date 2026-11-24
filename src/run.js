@@ -10,6 +10,7 @@ const { loadChecks, recordCheck, saveResults, oneLine, FAILING } = require('./re
 const { stepSummary, tail } = require('./summary');
 const { findingsFromReport, annotationLines, property, data } = require('./annotations');
 const { readChangedFiles } = require('./changed-files');
+const { readChangedLines } = require('./changed-lines');
 const { moduleNames } = require('./extension');
 const { createShell } = require('./shell');
 
@@ -67,7 +68,9 @@ function annotate(check, ctx, write) {
   }
   const budgetFile = path.join(config.results, 'annotation-budget.json');
   const findings = findingsFromReport(check, report, { workspace: config.workspace, extension: config.extension, threshold });
-  const { lines, budget } = annotationLines(check, findings, ctx.changed, readJson(budgetFile) || { error: 10, warning: 10 });
+  const scope = check === 'phpcs' ? config.phpcs.scope : (config.phpstan && config.phpstan.scope);
+  const changedLines = scope === 'lines' ? ctx.changedLines : null;
+  const { lines, budget } = annotationLines(check, findings, ctx.changed, readJson(budgetFile) || { error: 10, warning: 10 }, changedLines);
   fs.writeFileSync(budgetFile, JSON.stringify(budget));
   for (const line of lines) {
     write(`${line}\n`);
@@ -86,6 +89,7 @@ async function runChecks(config, implementations, { write = (text) => process.st
     config,
     modules: moduleNames(config.extension),
     changed: readChangedFiles(path.join(config.work, 'changed-files.txt')),
+    changedLines: readChangedLines(path.join(config.work, 'changed-lines.json')),
     installedPath: () => fs.readFileSync(path.join(config.work, 'installed-path'), 'utf8').trim(),
   };
 

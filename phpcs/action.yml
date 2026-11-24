@@ -30,7 +30,9 @@ inputs:
     required: false
     default: ''
   scope:
-    description: '`changed` checks only the PHP files touched by the pull request or push; `all` checks every file.'
+    description: >-
+      `changed` checks only the PHP files touched by the pull request or push; `all` checks every
+      file; `lines` checks the changed files but fails only on findings in the changed lines.
     required: false
     default: 'changed'
   annotations:
@@ -105,6 +107,7 @@ runs:
         MEC_PHPCS_SCOPE: ${{ inputs.scope }}
         MEC_PHPCS_CONFIG: ${{ inputs.config }}
         MEC_PHPSTAN_LEVEL: '1'
+        MEC_PHPSTAN_SCOPE: 'all'
         MEC_PHPSTAN_CONFIG: ''
         MEC_PHPSTAN_BASELINE: ''
         MEC_ANNOTATIONS: ${{ inputs.annotations }}

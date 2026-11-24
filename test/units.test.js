@@ -14,9 +14,9 @@ const { recordCheck, overallStatus } = require('../src/results');
 const { mirrorDirectory, differences } = require('../src/copy');
 const { unitConfiguration, runPhpunit } = require('../src/checks/phpunit');
 const { CheckFailed } = require('../src/errors');
-const { defaultConfiguration } = require('../src/checks/phpstan');
+const { defaultConfiguration, phpstanOutcome } = require('../src/checks/phpstan');
 const { resolveToolConfig } = require('../src/checks/tool-config');
-const { validate } = require('../src/checks/static');
+const { validate, phpcsOutcome } = require('../src/checks/static');
 const { workspace } = require('./helpers');
 
 test('modules, PHP files and test directories of an extension', () => {
@@ -141,14 +141,75 @@ test('report parsers', () => {
   assert.deepEqual(junitTotals(''), { tests: 0, assertions: 0, broken: 0 });
 
   const phpcs = { files: { a: { messages: [{ type: 'ERROR', severity: 10 }, { type: 'ERROR', severity: 8 }, { type: 'WARNING', severity: 6 }] } } };
-  assert.deepEqual(phpcsTotals(phpcs, '10'), { failing: 1, other: 2 });
-  assert.deepEqual(phpcsTotals(phpcs, 'errors'), { failing: 2, other: 1 });
+  assert.deepEqual(phpcsTotals(phpcs, '10'), { failing: 1, other: 2, outside: 0 });
+  assert.deepEqual(phpcsTotals(phpcs, 'errors'), { failing: 2, other: 1, outside: 0 });
   assert.equal(phpcsTotals({ unexpected: true }, '10'), null);
 
   const phpstan = { totals: { errors: 1, file_errors: 2 }, errors: ['Ignored error pattern'], files: { 'a.php': { messages: [{ line: 4, message: 'Bad' }, { message: 'Worse' }] } } };
-  assert.deepEqual(phpstanTotals(phpstan), { count: 3, lines: ['Ignored error pattern', 'a.php:4  Bad', 'a.php:?  Worse'] });
+  assert.deepEqual(phpstanTotals(phpstan), { count: 3, failing: 3, lines: ['Ignored error pattern', 'a.php:4  Bad', 'a.php:?  Worse'] });
   assert.equal(phpstanTotals(null), null);
   assert.equal(firstVersion('PHP_CodeSniffer version 3.13.6 (stable)'), '3.13.6');
+});
+
+test('phpcs counts only findings on changed lines when asked', () => {
+  const report = { files: { '/w/ext/A.php': { messages: [
+    { line: 5, severity: 10, type: 'ERROR' }, { line: 50, severity: 10, type: 'ERROR' }, { line: 6, severity: 5, type: 'WARNING' },
+  ] } } };
+  assert.deepEqual(phpcsTotals(report, '10'), { failing: 2, other: 1, outside: 0 });
+  assert.deepEqual(phpcsTotals(report, '10', (file, line) => line < 10), { failing: 1, other: 1, outside: 1 });
+});
+
+test('phpcs note names the findings on changed lines and the unknown changed lines', () => {
+  const totals = { failing: 1, other: 2, outside: 3 };
+  assert.deepEqual(phpcsOutcome(totals, { prefix: '', lines: true, summary: 'ruleset; 2 changed files', rule: 'errors' }),
+    { status: 'failed', note: 'ruleset; 2 changed files: 1 errors on changed lines, 3 elsewhere in changed files, 2 other' });
+  const unknown = phpcsOutcome({ failing: 4, other: 0, outside: 0 }, { prefix: 'changed lines unknown; ', lines: false, summary: 'ruleset; 9 every file', rule: 'errors' });
+  assert.match(unknown.note, /^changed lines unknown; ruleset; 9 every file: 4 errors, 0 other$/);
+  assert.equal(phpcsOutcome({ failing: 0, other: 1, outside: 5 }, { prefix: '', lines: true, summary: 's', rule: 'errors' }).status, 'passed');
+});
+
+test('phpstan counts findings in scope, general errors always', () => {
+  const report = { totals: { errors: 0, file_errors: 2 }, errors: [],
+    files: { '/w/ext/A.php': { messages: [{ line: 3, message: 'a' }, { line: 30, message: 'b' }] } } };
+  assert.equal(phpstanTotals(report).failing, 2);
+  assert.equal(phpstanTotals(report, (file, line) => line < 10).failing, 1);
+  const general = { totals: { errors: 1, file_errors: 0 }, errors: ['Invalid configuration'], files: {} };
+  assert.equal(phpstanTotals(general, () => false).failing, 1);
+});
+
+test('phpstan status follows its scope and steps down when changes are unknown', () => {
+  const { extension } = workspace({ 'Model/Other.php': '<?php' });
+  const report = { totals: { errors: 0, file_errors: 2 }, errors: [], files: {
+    [path.join(extension, 'Model/Demo.php')]: { messages: [{ line: 3, message: 'a' }] },
+    [path.join(extension, 'Model/Other.php')]: { messages: [{ line: 1, message: 'b' }] },
+  } };
+  const ctx = (changed, changedLines) => ({ config: { workspace: extension, extension }, changed, changedLines });
+
+  assert.deepEqual(phpstanOutcome(report, 1, ctx(null, null), 'all', 'cfg'), { status: 'failed', note: 'cfg; 2 finding(s)' });
+  assert.deepEqual(phpstanOutcome(report, 1, ctx(new Set(['Model/Other.php']), null), 'changed', 'cfg'),
+    { status: 'failed', note: 'cfg; 2 finding(s), 1 in changed files' });
+  assert.deepEqual(phpstanOutcome(report, 1, ctx(new Set(['Model/Demo.php']), { 'Model/Demo.php': [[9, 9]] }), 'lines', 'cfg'),
+    { status: 'passed', note: 'cfg; 2 finding(s), 0 on changed lines' });
+
+  const noLines = phpstanOutcome(report, 1, ctx(new Set(['Model/Demo.php']), null), 'lines', 'cfg');
+  assert.deepEqual(noLines, { status: 'failed', note: 'changed lines unknown; cfg; 2 finding(s), 1 in changed files' });
+  const clean = { totals: { errors: 0, file_errors: 1 }, errors: [], files: { [path.join(extension, 'Model/Other.php')]: { messages: [{ line: 1, message: 'b' }] } } };
+  assert.equal(phpstanOutcome(clean, 1, ctx(new Set(['Model/Demo.php']), null), 'lines', 'cfg').status, 'passed');
+
+  const noFiles = phpstanOutcome(report, 1, ctx(null, null), 'changed', 'cfg');
+  assert.deepEqual(noFiles, { status: 'failed', note: 'changed files unknown; cfg; 2 finding(s)' });
+
+  const crashed = { totals: { errors: 0, file_errors: 0 }, errors: [], files: {} };
+  assert.equal(phpstanOutcome(crashed, 255, ctx(new Set(['Model/Demo.php']), null), 'changed', 'cfg').status, 'failed');
+});
+
+test('annotations can be limited to changed lines', () => {
+  const findings = [
+    { level: 'error', file: 'A.php', line: 5, col: 0, title: 'PHPCS', message: 'in' },
+    { level: 'error', file: 'A.php', line: 50, col: 0, title: 'PHPCS', message: 'out' },
+  ];
+  const { lines } = annotationLines('phpcs', findings, new Set(['A.php']), { error: 10, warning: 10 }, { 'A.php': [[1, 9]] });
+  assert.deepEqual(lines, ['::error file=A.php,line=5,title=PHPCS::in']);
 });
 
 test('annotations prefer changed files, respect the budget and limit PHPStan to changed files', () => {
