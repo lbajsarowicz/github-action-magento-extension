@@ -46,12 +46,13 @@ function writeInstallState(config, status) {
  * Tells a sub-action whether an earlier step of the same job already restored the Composer cache,
  * and records what this step is about to restore.
  */
-function detectPrepared({ work, job, cacheId }) {
+function detectPrepared({ work, job, cacheId, cacheMode = 'actions' }) {
   fs.mkdirSync(work, { recursive: true });
   const cacheFile = path.join(work, 'prepared-cache');
   const cacheWanted = `${job} ${cacheId}`;
   const cache = read(cacheFile) === cacheWanted;
-  if (!cache) {
+  // With `none` nothing is restored, so a later step that asks for the cache must still restore it.
+  if (!cache && cacheMode !== 'none') {
     fs.writeFileSync(cacheFile, cacheWanted);
   }
   return { cache };
